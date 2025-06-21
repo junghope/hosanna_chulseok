@@ -8,7 +8,7 @@
     <!-- Firebase -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, getDocs, deleteDoc, doc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
         
         // Firebase 설정
         const firebaseConfig = {
@@ -26,7 +26,7 @@
         
         // 전역 변수로 설정
         window.db = db;
-        window.firestore = { collection, addDoc, onSnapshot, query, orderBy, where, getDocs };
+        window.firestore = { collection, addDoc, onSnapshot, query, orderBy, where, getDocs, deleteDoc, doc };
     </script>
     
     <style>
@@ -351,7 +351,7 @@
             <div id="attendance-mode" class="attendance-main hidden">
                 <div class="big-title">✅ 출석하기</div>
                 
-                <div class="form-group">
+                <div class="form-group" id="name-section">
                     <label for="user-name">이름</label>
                     <input type="text" id="user-name" placeholder="이름을 입력하세요" autofocus>
                 </div>
@@ -543,6 +543,25 @@
             window.location.href = currentUrl + '?action=attend';
         }
         
+        // 통계 보기 버튼 생성 (일반 사용자용)
+        function showStatsButton() {
+            const resultDiv = document.getElementById('result-message');
+            const existingButton = document.getElementById('stats-btn');
+            
+            if (!existingButton) {
+                resultDiv.innerHTML += `
+                    <div style="margin-top: 20px;">
+                        <button id="stats-btn" class="btn" onclick="goToStats()" style="background: #6c757d; font-size: 16px; padding: 15px;">
+                            📊 출석 현황 보기
+                        </button>
+                        <p style="margin-top: 10px; color: #666; font-size: 14px;">
+                            5초 후 자동으로 새로고침됩니다.
+                        </p>
+                    </div>
+                `;
+            }
+        }
+        
         // Firebase에서 모임 시간 불러오기
         async function loadMeetingTimeFromFirebase() {
             if (!window.db) return;
@@ -610,14 +629,6 @@
                 }
             });
         }
-        function goBackToAttendance() {
-            // 페이지 제목 원래대로 복원
-            document.querySelector('.header h1').textContent = '📋 출석 체크';
-            document.querySelector('.header p').textContent = 'QR 스캔하면 바로 이 페이지로!';
-            
-            // 출석 페이지로 이동
-            window.location.href = currentUrl + '?action=attend';
-        }
         
         // 이름 수정 (관리자 전용)
         async function editName(recordId, currentName) {
@@ -655,91 +666,9 @@
             }
         }
         
-        // 출석 기록 삭제 (관리자 전용)
+        // 출석 기록 삭제 (관리자 전용) - 실제 Firebase 삭제 구현
         async function deleteAttendance(recordId, name) {
             if (!confirm(`"${name}"님의 출석 기록을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
-                return;
-            }
-            
-            try {
-                // Firestore 보안 규칙 때문에 클라이언트에서 직접 삭제는 어려움
-                // 실제로는 admin SDK나 Cloud Functions 필요
-                showLoginAlert(`"${name}"님의 출석 기록 삭제 요청\n실제 삭제는 Firebase 콘솔에서 직접 해주세요.\n문서 ID: ${recordId}`, 'warning');
-            } catch (error) {
-                console.error('출석 기록 삭제 실패:', error);
-                showLoginAlert('출석 기록 삭제에 실패했습니다.', 'danger');
-            }
-        }
-        function setupMeetingTimeListener() {
-            if (!window.db) return;
-
-            const today = new Date().toDateString();
-            const q = window.firestore.query(
-                window.firestore.collection(window.db, 'meetings'),
-                window.firestore.where('date', '==', today)
-            );
-
-            unsubscribeMeeting = window.firestore.onSnapshot(q, (snapshot) => {
-                if (!snapshot.empty) {
-                    // 가장 최근 설정된 모임 시간 찾기
-                    const meetings = [];
-                    snapshot.forEach(doc => {
-                        meetings.push(doc.data());
-                    });
-                    
-                    // 타임스탬프 기준으로 정렬하여 가장 최근 것 선택
-                    meetings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                    
-                    meetingTime = meetings[0].meetingTime;
-                    updateMeetingTimeDisplay();
-                    
-                    // 관리자 화면에서 입력란도 업데이트
-                    if (document.getElementById('meeting-time')) {
-                        document.getElementById('meeting-time').value = meetingTime;
-                    }
-                }
-            });
-        }
-        
-        // Firebase에서 모임 시간 불러오기
-        async function loadMeetingTimeFromFirebase() {
-            if (!window.db) return;
-            
-            try {
-                const today = new Date().toDateString();
-                const q = window.firestore.query(
-                    window.firestore.collection(window.db, 'meetings'),
-                    window.firestore.where('date', '==', today)
-                );
-                
-                const querySnapshot = await window.firestore.getDocs(q);
-                
-                if (!querySnapshot.empty) {
-                    // 가장 최근 설정된 모임 시간 찾기
-                    const meetings = [];
-                    querySnapshot.forEach(doc => {
-                        meetings.push(doc.data());
-                    });
-                    
-                    // 타임스탬프 기준으로 정렬하여 가장 최근 것 선택
-                    meetings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                    
-                    meetingTime = meetings[0].meetingTime;
-                    updateMeetingTimeDisplay();
-                    
-                    // 관리자 화면에서 입력란도 업데이트
-                    if (document.getElementById('meeting-time')) {
-                        document.getElementById('meeting-time').value = meetingTime;
-                    }
-                }
-            } catch (error) {
-                console.error('모임 시간 불러오기 실패:', error);
-            }
-        }
-        async function setMeetingTime() {
-            const timeInput = document.getElementById('meeting-time').value;
-            if (!timeInput) {
-                showLoginAlert('모임 시간을 선택해주세요.', 'danger');
                 return;
             }
             
@@ -749,37 +678,12 @@
             }
             
             try {
-                const today = new Date().toDateString();
-                
-                // 기존 모임 시간 확인
-                const q = window.firestore.query(
-                    window.firestore.collection(window.db, 'meetings'),
-                    window.firestore.where('date', '==', today)
-                );
-                
-                const querySnapshot = await window.firestore.getDocs(q);
-                
-                const meetingData = {
-                    meetingTime: timeInput,
-                    date: today,
-                    timestamp: new Date().toISOString()
-                };
-                
-                if (querySnapshot.empty) {
-                    // 새로 생성
-                    await window.firestore.addDoc(window.firestore.collection(window.db, 'meetings'), meetingData);
-                } else {
-                    // 기존 것 업데이트 (실제로는 새로 추가 - Firestore 특성상)
-                    await window.firestore.addDoc(window.firestore.collection(window.db, 'meetings'), meetingData);
-                }
-                
-                meetingTime = timeInput;
-                updateMeetingTimeDisplay();
-                showLoginAlert('모임 시간이 설정되었습니다! 모든 사용자가 이제 출석할 수 있습니다.', 'success');
-                
+                // Firebase에서 실제 삭제
+                await window.firestore.deleteDoc(window.firestore.doc(window.db, 'attendance', recordId));
+                showLoginAlert(`"${name}"님의 출석 기록이 삭제되었습니다.`, 'success');
             } catch (error) {
-                console.error('모임 시간 설정 실패:', error);
-                showLoginAlert('모임 시간 설정에 실패했습니다.', 'danger');
+                console.error('출석 기록 삭제 실패:', error);
+                showLoginAlert('출석 기록 삭제에 실패했습니다. Firebase 권한을 확인해주세요.', 'danger');
             }
         }
         
@@ -799,27 +703,14 @@
             try {
                 const today = new Date().toDateString();
                 
-                // 기존 모임 시간 확인
-                const q = window.firestore.query(
-                    window.firestore.collection(window.db, 'meetings'),
-                    window.firestore.where('date', '==', today)
-                );
-                
-                const querySnapshot = await window.firestore.getDocs(q);
-                
                 const meetingData = {
                     meetingTime: timeInput,
                     date: today,
                     timestamp: new Date().toISOString()
                 };
                 
-                if (querySnapshot.empty) {
-                    // 새로 생성
-                    await window.firestore.addDoc(window.firestore.collection(window.db, 'meetings'), meetingData);
-                } else {
-                    // 기존 것 업데이트 (실제로는 새로 추가 - Firestore 특성상)
-                    await window.firestore.addDoc(window.firestore.collection(window.db, 'meetings'), meetingData);
-                }
+                // 새로 추가 (Firestore 특성상 중복 생성)
+                await window.firestore.addDoc(window.firestore.collection(window.db, 'meetings'), meetingData);
                 
                 meetingTime = timeInput;
                 updateMeetingTimeDisplay();
@@ -828,16 +719,6 @@
             } catch (error) {
                 console.error('모임 시간 설정 실패:', error);
                 showLoginAlert('모임 시간 설정에 실패했습니다.', 'danger');
-            }
-        }
-        function updateMeetingTimeDisplay() {
-            if (meetingTime) {
-                const time = new Date(meetingTime);
-                const displayElement = document.getElementById('current-meeting-time');
-                if (displayElement) {
-                    displayElement.innerHTML = 
-                        `<span style="color: #28a745;">✅ 설정된 모임 시간: ${time.toLocaleString('ko-KR')}</span>`;
-                }
             }
         }
         
@@ -851,20 +732,6 @@
                         `<span style="color: #28a745;">✅ 설정된 모임 시간: ${time.toLocaleString('ko-KR')}</span>`;
                 }
             }
-        }
-        function calculateLateMinutes(checkInTime) {
-            if (!meetingTime) {
-                console.warn('모임 시간이 설정되지 않았습니다.');
-                return 0;
-            }
-            
-            const meeting = new Date(meetingTime);
-            const checkIn = new Date(checkInTime);
-            const diffMs = checkIn - meeting;
-            
-            if (diffMs <= 0) return 0; // 정시 또는 일찍 도착
-            
-            return Math.ceil(diffMs / (1000 * 60)); // 분 단위로 올림
         }
         
         // 지각 시간 계산 (분 단위)
@@ -882,39 +749,11 @@
             
             return Math.ceil(diffMs / (1000 * 60)); // 분 단위로 올림
         }
-        function calculateFine(lateMinutes) {
-            if (lateMinutes <= 0) return 0;
-            return Math.ceil(lateMinutes / 5) * 5000;
-        }
 
         // 벌금 계산 (5분당 5,000원)
         function calculateFine(lateMinutes) {
             if (lateMinutes <= 0) return 0;
             return Math.ceil(lateMinutes / 5) * 5000;
-        }
-        function checkUrlParams() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const action = urlParams.get('action');
-            
-            if (action === 'attend') {
-                // 출석 모드
-                document.getElementById('attendance-mode').classList.remove('hidden');
-                document.getElementById('admin-login').classList.add('hidden');
-                document.getElementById('stats-only-mode').classList.add('hidden');
-                document.getElementById('admin-mode').classList.add('hidden');
-                
-                if (savedUserName) {
-                    document.getElementById('saved-name').textContent = savedUserName;
-                    document.getElementById('saved-user').classList.remove('hidden');
-                    document.getElementById('attend-btn').classList.add('hidden');
-                }
-            } else {
-                // 메인 모드 - 관리자 로그인 화면 표시
-                document.getElementById('attendance-mode').classList.add('hidden');
-                document.getElementById('admin-login').classList.remove('hidden');
-                document.getElementById('stats-only-mode').classList.add('hidden');
-                document.getElementById('admin-mode').classList.add('hidden');
-            }
         }
         
         // URL 파라미터 확인
@@ -942,17 +781,13 @@
                 document.getElementById('admin-mode').classList.add('hidden');
             }
         }
-        function goToStats() {
-            document.getElementById('admin-login').classList.add('hidden');
-            document.getElementById('stats-only-mode').classList.remove('hidden');
-            document.getElementById('admin-mode').classList.add('hidden');
-        }
         
         // 통계만 보기
         function goToStats() {
             document.getElementById('admin-login').classList.add('hidden');
             document.getElementById('stats-only-mode').classList.remove('hidden');
             document.getElementById('admin-mode').classList.add('hidden');
+            document.getElementById('attendance-mode').classList.add('hidden');
         }
         
         // 관리자 로그인 화면으로
@@ -960,17 +795,12 @@
             document.getElementById('admin-login').classList.remove('hidden');
             document.getElementById('stats-only-mode').classList.add('hidden');
             document.getElementById('admin-mode').classList.add('hidden');
-        }
-        function goToAdminLogin() {
-            document.getElementById('admin-login').classList.remove('hidden');
-            document.getElementById('stats-only-mode').classList.add('hidden');
-            document.getElementById('admin-mode').classList.add('hidden');
+            document.getElementById('attendance-mode').classList.add('hidden');
         }
         
         // 관리자 비밀번호 확인
         function checkAdminPassword() {
             const password = document.getElementById('admin-password').value;
-            const messageDiv = document.getElementById('login-message');
             
             if (password === ADMIN_PASSWORD) {
                 isAdminLoggedIn = true;
@@ -1002,51 +832,6 @@
             document.getElementById('admin-password').value = '';
             
             showLoginAlert('로그아웃되었습니다.', 'warning');
-        }
-        
-        // 관리자 비밀번호 확인
-        function checkAdminPassword() {
-            const password = document.getElementById('admin-password').value;
-            const messageDiv = document.getElementById('login-message');
-            
-            if (password === ADMIN_PASSWORD) {
-                isAdminLoggedIn = true;
-                sessionStorage.setItem('adminLoggedIn', 'true');
-                
-                document.getElementById('admin-login').classList.add('hidden');
-                document.getElementById('stats-only-mode').classList.add('hidden');
-                document.getElementById('admin-mode').classList.remove('hidden');
-                
-                // QR 생성 및 모임 시간 로드
-                generateQR();
-                loadMeetingTimeFromFirebase();
-                
-                showLoginAlert('관리자 로그인 성공!', 'success');
-            } else {
-                showLoginAlert('비밀번호가 틀렸습니다.', 'danger');
-                document.getElementById('admin-password').value = '';
-            }
-        }
-        
-        // 로그아웃
-        function logout() {
-            isAdminLoggedIn = false;
-            sessionStorage.removeItem('adminLoggedIn');
-            
-            document.getElementById('admin-mode').classList.add('hidden');
-            document.getElementById('admin-login').classList.remove('hidden');
-            document.getElementById('stats-only-mode').classList.add('hidden');
-            document.getElementById('admin-password').value = '';
-            
-            showLoginAlert('로그아웃되었습니다.', 'warning');
-        }
-        function showLoginAlert(message, type) {
-            const messageDiv = document.getElementById('login-message');
-            messageDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
-            
-            setTimeout(() => {
-                messageDiv.innerHTML = '';
-            }, 3000);
         }
 
         // 로그인 알림 표시
@@ -1057,34 +842,6 @@
             setTimeout(() => {
                 messageDiv.innerHTML = '';
             }, 3000);
-        }
-        function checkFirebaseConnection() {
-            if (window.db) {
-                document.getElementById('connection-status').className = 'connection-status connected';
-                document.getElementById('connection-status').textContent = '🟢 실시간 공유 연결됨';
-                initializeApp();
-                
-                // 관리자 화면에서 기본 시간 설정
-                setTimeout(() => {
-                    const meetingTimeInput = document.getElementById('meeting-time');
-                    if (meetingTimeInput && !meetingTime) {
-                        const now = new Date();
-                        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-                        meetingTimeInput.value = now.toISOString().slice(0, 16);
-                    }
-                }, 500);
-            } else {
-                document.getElementById('connection-status').className = 'connection-status disconnected';
-                document.getElementById('connection-status').textContent = '🔴 Firebase 연결 실패';
-                showAlert('Firebase 연결에 문제가 있습니다.', 'warning');
-            }
-        }
-
-        // 앱 초기화
-        function initializeApp() {
-            checkUrlParams();
-            setupRealtimeListener();
-            loadMeetingTime();
         }
 
         // Firebase 연결 상태 확인
@@ -1110,13 +867,7 @@
             }
         }
         
-        // 앱 초기화
-        function initializeApp() {
-            checkUrlParams();
-            setupRealtimeListener();
-            setupMeetingTimeListener();
-            loadMeetingTimeFromFirebase();
-        }
+        // 실시간 출석 기록 리스너
         function setupRealtimeListener() {
             if (!window.db) return;
 
@@ -1140,16 +891,20 @@
                 const totalFine = records.reduce((sum, r) => sum + (r.fine || 0), 0);
                 
                 // 관리자용 통계 업데이트
-                updateAttendanceDisplay(records);
-                document.getElementById('total-count').textContent = records.length;
-                document.getElementById('late-count').textContent = lateCount;
-                document.getElementById('total-fine').textContent = totalFine.toLocaleString() + '원';
+                if (document.getElementById('total-count')) {
+                    updateAttendanceDisplay(records);
+                    document.getElementById('total-count').textContent = records.length;
+                    document.getElementById('late-count').textContent = lateCount;
+                    document.getElementById('total-fine').textContent = totalFine.toLocaleString() + '원';
+                }
                 
                 // 일반 사용자용 통계 업데이트
-                updatePublicAttendanceDisplay(records);
-                document.getElementById('total-count-public').textContent = records.length;
-                document.getElementById('late-count-public').textContent = lateCount;
-                document.getElementById('total-fine-public').textContent = totalFine.toLocaleString() + '원';
+                if (document.getElementById('total-count-public')) {
+                    updatePublicAttendanceDisplay(records);
+                    document.getElementById('total-count-public').textContent = records.length;
+                    document.getElementById('late-count-public').textContent = lateCount;
+                    document.getElementById('total-fine-public').textContent = totalFine.toLocaleString() + '원';
+                }
                 
                 attendanceCount = records.length;
             });
@@ -1279,7 +1034,7 @@
         // 오늘 데이터 삭제 (관리자 전용)
         async function clearTodayData() {
             if (!window.db) {
-                showAlert('Firebase 연결이 필요합니다.', 'danger');
+                showLoginAlert('Firebase 연결이 필요합니다.', 'danger');
                 return;
             }
 
@@ -1295,226 +1050,25 @@
                 );
                 
                 const querySnapshot = await window.firestore.getDocs(q);
-                showLoginAlert(`${querySnapshot.size}개의 기록이 확인되었습니다. 실제 삭제는 Firebase 콘솔에서 수동으로 해야 합니다.`, 'warning');
                 
-            } catch (error) {
-                console.error('데이터 확인 실패:', error);
-                showAlert('데이터 확인에 실패했습니다.', 'danger');
-            }
-        }
-        
-        // Enter 키로 출석하기 및 관리자 로그인
-        document.addEventListener('DOMContentLoaded', function() {
-            const nameInput = document.getElementById('user-name');
-            const passwordInput = document.getElementById('admin-password');
-            
-            if (nameInput) {
-                nameInput.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        recordAttendance();
-                    }
-                });
-            }
-            
-            if (passwordInput) {
-                passwordInput.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        checkAdminPassword();
-                    }
-                });
-            }
-        });
-        
-        // 초기화
-        window.addEventListener('load', () => {
-            setTimeout(checkFirebaseConnection, 1000);
-        });
-        
-        window.addEventListener('beforeunload', () => {
-            if (unsubscribe) unsubscribe();
-            if (unsubscribeMeeting) unsubscribeMeeting();
-        });
-        function showTab(tabName) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            
-            event.target.classList.add('active');
-            document.getElementById(tabName + '-tab').classList.add('active');
-        }
-
-        // QR 코드 생성 (가장 안정적인 방식)
-        function generateQR() {
-            const attendanceUrl = currentUrl + '?action=attend';
-            document.getElementById('attendance-url').textContent = attendanceUrl;
-            
-            // 온라인 QR 생성 API 사용 (100% 안정적)
-            const qrContainer = document.getElementById('qr-code');
-            qrContainer.innerHTML = `
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(attendanceUrl)}" 
-                     alt="출석 QR 코드" 
-                     style="border: 1px solid #ddd; border-radius: 10px; max-width: 100%;"
-                     onload="console.log('QR 코드 로드 완료')"
-                     onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhkN2RhIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNiIgZmlsbD0iIzcyMWMyNCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkVSUk9SPC90ZXh0Pjwvc3ZnPg=='">
-            `;
-        }
-
-        // URL 복사
-        function copyUrl() {
-            const url = document.getElementById('attendance-url').textContent;
-            navigator.clipboard.writeText(url).then(() => {
-                showAlert('URL이 복사되었습니다!', 'success');
-            });
-        }
-
-        // QR 코드 인쇄
-        function printQR() {
-            const qrElement = document.getElementById('qr-code');
-            const url = document.getElementById('attendance-url').textContent;
-            const printWindow = window.open('', '_blank');
-            printWindow.document.write(`
-                <html>
-                <head>
-                    <title>출석 QR 코드</title>
-                    <style>
-                        body { 
-                            font-family: Arial, sans-serif; 
-                            text-align: center; 
-                            padding: 50px;
-                        }
-                        .qr-container { 
-                            border: 3px solid #000; 
-                            padding: 30px; 
-                            display: inline-block;
-                        }
-                        h1 { font-size: 24px; margin-bottom: 20px; }
-                        p { font-size: 16px; margin: 10px 0; }
-                        .url { font-size: 12px; word-break: break-all; margin-top: 20px; }
-                    </style>
-                </head>
-                <body>
-                    <h1>📋 출석 QR 코드</h1>
-                    <div class="qr-container">
-                        ${qrElement.innerHTML}
-                    </div>
-                    <p>QR 코드를 스캔하면 출석 페이지로 이동합니다</p>
-                    <div class="url">${url}</div>
-                </body>
-                </html>
-            `);
-            printWindow.document.close();
-            printWindow.print();
-        }
-
-        // 다른 이름으로 출석
-        function changeUser() {
-            document.getElementById('saved-user').classList.add('hidden');
-            document.getElementById('attend-btn').classList.remove('hidden');
-            document.getElementById('user-name').value = '';
-            document.getElementById('user-name').focus();
-        }
-
-        // 출석 기록
-        async function recordAttendance() {
-            if (!window.db) {
-                showAlert('Firebase 연결이 필요합니다.', 'danger');
-                return;
-            }
-
-            // Firebase에서 최신 모임 시간 확인
-            if (!meetingTime) {
-                await loadMeetingTimeFromFirebase();
-            }
-
-            if (!meetingTime) {
-                showAlert('관리자가 모임 시간을 먼저 설정해야 합니다.', 'danger');
-                return;
-            }
-
-            let userName;
-            
-            if (savedUserName && !document.getElementById('saved-user').classList.contains('hidden')) {
-                userName = savedUserName;
-            } else {
-                userName = document.getElementById('user-name').value.trim();
-                if (!userName) {
-                    showAlert('이름을 입력해주세요.', 'danger');
-                    return;
-                }
-                // 새 이름 저장
-                savedUserName = userName;
-                localStorage.setItem('savedUserName', savedUserName);
-            }
-
-            // 버튼 비활성화
-            document.getElementById('attend-btn').disabled = true;
-            document.getElementById('quick-attend-btn').disabled = true;
-            
-            try {
-                // 오늘 이미 출석했는지 확인
-                const today = new Date().toDateString();
-                const q = window.firestore.query(
-                    window.firestore.collection(window.db, 'attendance'),
-                    window.firestore.where('name', '==', userName),
-                    window.firestore.where('date', '==', today)
-                );
-                
-                const querySnapshot = await window.firestore.getDocs(q);
-                
-                if (!querySnapshot.empty) {
-                    showAlert('오늘 이미 출석하셨습니다.', 'danger');
-                    document.getElementById('attend-btn').disabled = false;
-                    document.getElementById('quick-attend-btn').disabled = false;
+                if (querySnapshot.empty) {
+                    showLoginAlert('삭제할 기록이 없습니다.', 'warning');
                     return;
                 }
                 
-                // 출석 시간 및 지각 계산
-                const now = new Date();
-                const lateMinutes = calculateLateMinutes(now.toISOString());
-                const fine = calculateFine(lateMinutes);
+                // 모든 문서 삭제
+                const deletePromises = [];
+                querySnapshot.forEach(doc => {
+                    deletePromises.push(window.firestore.deleteDoc(doc.ref));
+                });
                 
-                // 출석 기록 저장
-                const record = {
-                    name: userName,
-                    timestamp: now.toISOString(),
-                    date: now.toDateString(),
-                    time: now.toLocaleTimeString('ko-KR'),
-                    lateMinutes: lateMinutes,
-                    fine: fine,
-                    meetingTime: meetingTime
-                };
-                
-                await window.firestore.addDoc(window.firestore.collection(window.db, 'attendance'), record);
-                
-                // UI 정리 (모든 입력 요소 숨기기)
-                document.getElementById('name-section').classList.add('hidden');
-                document.getElementById('saved-user').classList.add('hidden');
-                document.getElementById('user-name').value = '';
-                
-                // 결과 메시지 표시
-                if (lateMinutes === 0) {
-                    showAlert(`${userName}님, 정시 출석 완료! 🎉`, 'success');
-                } else {
-                    showAlert(`${userName}님, ${lateMinutes}분 지각으로 ${fine.toLocaleString()}원 벌금입니다. 😅`, 'warning');
-                }
-                
-                // 통계 보기 버튼 추가
-                setTimeout(() => {
-                    showStatsButton();
-                }, 500);
-                
-                // 5초 후 자동으로 페이지 새로고침 (다음 사람을 위해)
-                autoRefreshTimer = setTimeout(() => {
-                    window.location.reload();
-                }, 5000);
+                await Promise.all(deletePromises);
+                showLoginAlert(`${querySnapshot.size}개의 출석 기록이 삭제되었습니다.`, 'success');
                 
             } catch (error) {
-                console.error('출석 기록 실패:', error);
-                showAlert('출석 기록에 실패했습니다. 다시 시도해주세요.', 'danger');
+                console.error('데이터 삭제 실패:', error);
+                showLoginAlert('데이터 삭제에 실패했습니다. Firebase 권한을 확인해주세요.', 'danger');
             }
-            
-            // 버튼 재활성화
-            document.getElementById('attend-btn').disabled = false;
-            document.getElementById('quick-attend-btn').disabled = false;
         }
 
         // 관리자용 출석 현황 업데이트 (수정/삭제 기능 포함)
@@ -1592,33 +1146,6 @@
                     </div>
                 `;
             }).join('');
-        }
-
-        // 오늘 데이터 삭제 (관리자 전용)
-        async function clearTodayData() {
-            if (!window.db) {
-                showAlert('Firebase 연결이 필요합니다.', 'danger');
-                return;
-            }
-
-            if (!confirm('⚠️ 정말로 오늘의 모든 출석 기록을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
-                return;
-            }
-
-            try {
-                const today = new Date().toDateString();
-                const q = window.firestore.query(
-                    window.firestore.collection(window.db, 'attendance'),
-                    window.firestore.where('date', '==', today)
-                );
-                
-                const querySnapshot = await window.firestore.getDocs(q);
-                showAlert(`${querySnapshot.size}개의 기록이 확인되었습니다. 실제 삭제는 Firebase 콘솔에서 수동으로 해야 합니다.`, 'warning');
-                
-            } catch (error) {
-                console.error('데이터 확인 실패:', error);
-                showAlert('데이터 확인에 실패했습니다.', 'danger');
-            }
         }
 
         // 알림 표시
@@ -1711,26 +1238,6 @@
             printWindow.document.close();
             printWindow.print();
         }
-        document.addEventListener('DOMContentLoaded', function() {
-            const nameInput = document.getElementById('user-name');
-            const passwordInput = document.getElementById('admin-password');
-            
-            if (nameInput) {
-                nameInput.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        recordAttendance();
-                    }
-                });
-            }
-            
-            if (passwordInput) {
-                passwordInput.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        checkAdminPassword();
-                    }
-                });
-            }
-        });
 
         // Enter 키로 출석하기 및 관리자 로그인
         document.addEventListener('DOMContentLoaded', function() {
@@ -1755,14 +1262,6 @@
         });
         
         // 초기화
-        window.addEventListener('load', () => {
-            setTimeout(checkFirebaseConnection, 1000);
-        });
-        
-        window.addEventListener('beforeunload', () => {
-            if (unsubscribe) unsubscribe();
-            if (unsubscribeMeeting) unsubscribeMeeting();
-        });
         window.addEventListener('load', () => {
             setTimeout(checkFirebaseConnection, 1000);
         });
