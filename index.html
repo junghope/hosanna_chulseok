@@ -963,11 +963,16 @@
                 
                 await window.firestore.addDoc(window.firestore.collection(window.db, 'attendance'), record);
                 
+                // UI 정리 (모든 입력 요소 숨기기)
+                document.getElementById('name-section').classList.add('hidden');
+                document.getElementById('saved-user').classList.add('hidden');
+                document.getElementById('user-name').value = '';
+                
                 // 결과 메시지
                 if (lateMinutes === 0) {
-                    showAlert(`${userName}님, 정시 출석 완료! 🎉`, 'success');
+                    showAlert(`${userName}님, 정시 출석 완료! 🎉\n잠시 후 자동으로 새로고침됩니다.`, 'success');
                 } else {
-                    showAlert(`${userName}님, ${lateMinutes}분 지각으로 ${fine.toLocaleString()}원 벌금입니다. 😅`, 'warning');
+                    showAlert(`${userName}님, ${lateMinutes}분 지각으로 ${fine.toLocaleString()}원 벌금입니다. 😅\n잠시 후 자동으로 새로고침됩니다.`, 'warning');
                 }
                 
                 // 3초 후 자동으로 페이지 새로고침 (다음 사람을 위해)
