@@ -506,10 +506,11 @@
     <script>
         let savedUserName = localStorage.getItem('savedUserName') || '';
         let unsubscribe = null;
+        let unsubscribeMeeting = null;
         let attendanceCount = 0;
         let currentUrl = window.location.href.split('?')[0]; // 파라미터 제거한 기본 URL
         let isAdminLoggedIn = sessionStorage.getItem('adminLoggedIn') === 'true';
-        let meetingTime = localStorage.getItem('meetingTime') || null;
+        let meetingTime = null;
         
         // 관리자 비밀번호 (원하는 비밀번호로 변경하세요!)
         const ADMIN_PASSWORD = 'hosanna123';
@@ -518,48 +519,128 @@
         function initializeApp() {
             checkUrlParams();
             setupRealtimeListener();
-            loadMeetingTime();
+            setupMeetingTimeListener();
+            loadMeetingTimeFromFirebase();
         }
         
-        // 모임 시간 로드
-        function loadMeetingTime() {
-            if (meetingTime) {
-                document.getElementById('meeting-time').value = meetingTime;
-                updateMeetingTimeDisplay();
-            } else {
-                // 기본값: 현재 시간
-                const now = new Date();
-                now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-                document.getElementById('meeting-time').value = now.toISOString().slice(0, 16);
+        // Firebase에서 모임 시간 불러오기
+        async function loadMeetingTimeFromFirebase() {
+            if (!window.db) return;
+            
+            try {
+                const today = new Date().toDateString();
+                const q = window.firestore.query(
+                    window.firestore.collection(window.db, 'meetings'),
+                    window.firestore.where('date', '==', today)
+                );
+                
+                const querySnapshot = await window.firestore.getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    const meetingDoc = querySnapshot.docs[0];
+                    meetingTime = meetingDoc.data().meetingTime;
+                    updateMeetingTimeDisplay();
+                    
+                    // 관리자 화면에서 입력란도 업데이트
+                    if (document.getElementById('meeting-time')) {
+                        document.getElementById('meeting-time').value = meetingTime;
+                    }
+                }
+            } catch (error) {
+                console.error('모임 시간 불러오기 실패:', error);
             }
         }
         
-        // 모임 시간 설정
-        function setMeetingTime() {
+        // 모임 시간 실시간 리스너 설정
+        function setupMeetingTimeListener() {
+            if (!window.db) return;
+
+            const today = new Date().toDateString();
+            const q = window.firestore.query(
+                window.firestore.collection(window.db, 'meetings'),
+                window.firestore.where('date', '==', today)
+            );
+
+            unsubscribeMeeting = window.firestore.onSnapshot(q, (snapshot) => {
+                if (!snapshot.empty) {
+                    const meetingDoc = snapshot.docs[0];
+                    meetingTime = meetingDoc.data().meetingTime;
+                    updateMeetingTimeDisplay();
+                    
+                    // 관리자 화면에서 입력란도 업데이트
+                    if (document.getElementById('meeting-time')) {
+                        document.getElementById('meeting-time').value = meetingTime;
+                    }
+                }
+            });
+        }
+        
+        // 모임 시간 설정 (Firebase에 저장)
+        async function setMeetingTime() {
             const timeInput = document.getElementById('meeting-time').value;
             if (!timeInput) {
                 showLoginAlert('모임 시간을 선택해주세요.', 'danger');
                 return;
             }
             
-            meetingTime = timeInput;
-            localStorage.setItem('meetingTime', meetingTime);
-            updateMeetingTimeDisplay();
-            showLoginAlert('모임 시간이 설정되었습니다!', 'success');
+            if (!window.db) {
+                showLoginAlert('Firebase 연결이 필요합니다.', 'danger');
+                return;
+            }
+            
+            try {
+                const today = new Date().toDateString();
+                
+                // 기존 모임 시간 확인
+                const q = window.firestore.query(
+                    window.firestore.collection(window.db, 'meetings'),
+                    window.firestore.where('date', '==', today)
+                );
+                
+                const querySnapshot = await window.firestore.getDocs(q);
+                
+                const meetingData = {
+                    meetingTime: timeInput,
+                    date: today,
+                    timestamp: new Date().toISOString()
+                };
+                
+                if (querySnapshot.empty) {
+                    // 새로 생성
+                    await window.firestore.addDoc(window.firestore.collection(window.db, 'meetings'), meetingData);
+                } else {
+                    // 기존 것 업데이트 (실제로는 새로 추가 - Firestore 특성상)
+                    await window.firestore.addDoc(window.firestore.collection(window.db, 'meetings'), meetingData);
+                }
+                
+                meetingTime = timeInput;
+                updateMeetingTimeDisplay();
+                showLoginAlert('모임 시간이 설정되었습니다! 모든 사용자가 이제 출석할 수 있습니다.', 'success');
+                
+            } catch (error) {
+                console.error('모임 시간 설정 실패:', error);
+                showLoginAlert('모임 시간 설정에 실패했습니다.', 'danger');
+            }
         }
         
         // 모임 시간 표시 업데이트
         function updateMeetingTimeDisplay() {
             if (meetingTime) {
                 const time = new Date(meetingTime);
-                document.getElementById('current-meeting-time').innerHTML = 
-                    `<span style="color: #28a745;">✅ 설정된 모임 시간: ${time.toLocaleString('ko-KR')}</span>`;
+                const displayElement = document.getElementById('current-meeting-time');
+                if (displayElement) {
+                    displayElement.innerHTML = 
+                        `<span style="color: #28a745;">✅ 설정된 모임 시간: ${time.toLocaleString('ko-KR')}</span>`;
+                }
             }
         }
         
         // 지각 시간 계산 (분 단위)
         function calculateLateMinutes(checkInTime) {
-            if (!meetingTime) return 0;
+            if (!meetingTime) {
+                console.warn('모임 시간이 설정되지 않았습니다.');
+                return 0;
+            }
             
             const meeting = new Date(meetingTime);
             const checkIn = new Date(checkInTime);
@@ -631,7 +712,7 @@
                 
                 // QR 생성 및 모임 시간 로드
                 generateQR();
-                loadMeetingTime();
+                loadMeetingTimeFromFirebase();
                 
                 showLoginAlert('관리자 로그인 성공!', 'success');
             } else {
@@ -669,6 +750,16 @@
                 document.getElementById('connection-status').className = 'connection-status connected';
                 document.getElementById('connection-status').textContent = '🟢 실시간 공유 연결됨';
                 initializeApp();
+                
+                // 관리자 화면에서 기본 시간 설정
+                setTimeout(() => {
+                    const meetingTimeInput = document.getElementById('meeting-time');
+                    if (meetingTimeInput && !meetingTime) {
+                        const now = new Date();
+                        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                        meetingTimeInput.value = now.toISOString().slice(0, 16);
+                    }
+                }, 500);
             } else {
                 document.getElementById('connection-status').className = 'connection-status disconnected';
                 document.getElementById('connection-status').textContent = '🔴 Firebase 연결 실패';
@@ -805,6 +896,11 @@
             if (!window.db) {
                 showAlert('Firebase 연결이 필요합니다.', 'danger');
                 return;
+            }
+
+            // Firebase에서 최신 모임 시간 확인
+            if (!meetingTime) {
+                await loadMeetingTimeFromFirebase();
             }
 
             if (!meetingTime) {
@@ -1020,6 +1116,7 @@
         
         window.addEventListener('beforeunload', () => {
             if (unsubscribe) unsubscribe();
+            if (unsubscribeMeeting) unsubscribeMeeting();
         });
     </script>
 </body>
