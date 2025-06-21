@@ -391,7 +391,8 @@
             <div id="stats-only-mode" class="hidden">
                 <div style="text-align: center; margin-bottom: 20px;">
                     <span style="color: #4facfe; font-weight: 600;">📊 출석 통계</span>
-                    <button style="margin-left: 10px; padding: 5px 10px; border: none; background: #4facfe; color: white; border-radius: 5px; cursor: pointer;" onclick="goToAdminLogin()">관리자 로그인</button>
+                    <button style="margin-left: 10px; padding: 5px 10px; border: none; background: #28a745; color: white; border-radius: 5px; cursor: pointer;" onclick="goBackToAttendance()">🔙 출석하기</button>
+                    <button style="margin-left: 5px; padding: 5px 10px; border: none; background: #4facfe; color: white; border-radius: 5px; cursor: pointer;" onclick="goToAdminLogin()">🔐 관리자</button>
                 </div>
                 
                 <div class="stats-summary">
@@ -537,8 +538,16 @@
                 const querySnapshot = await window.firestore.getDocs(q);
                 
                 if (!querySnapshot.empty) {
-                    const meetingDoc = querySnapshot.docs[0];
-                    meetingTime = meetingDoc.data().meetingTime;
+                    // 가장 최근 설정된 모임 시간 찾기
+                    const meetings = [];
+                    querySnapshot.forEach(doc => {
+                        meetings.push(doc.data());
+                    });
+                    
+                    // 타임스탬프 기준으로 정렬하여 가장 최근 것 선택
+                    meetings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    
+                    meetingTime = meetings[0].meetingTime;
                     updateMeetingTimeDisplay();
                     
                     // 관리자 화면에서 입력란도 업데이트
@@ -549,6 +558,11 @@
             } catch (error) {
                 console.error('모임 시간 불러오기 실패:', error);
             }
+        }
+        
+        // 출석 페이지로 돌아가기
+        function goBackToAttendance() {
+            window.location.href = currentUrl + '?action=attend';
         }
         
         // 모임 시간 실시간 리스너 설정
@@ -563,8 +577,16 @@
 
             unsubscribeMeeting = window.firestore.onSnapshot(q, (snapshot) => {
                 if (!snapshot.empty) {
-                    const meetingDoc = snapshot.docs[0];
-                    meetingTime = meetingDoc.data().meetingTime;
+                    // 가장 최근 설정된 모임 시간 찾기
+                    const meetings = [];
+                    snapshot.forEach(doc => {
+                        meetings.push(doc.data());
+                    });
+                    
+                    // 타임스탬프 기준으로 정렬하여 가장 최근 것 선택
+                    meetings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    
+                    meetingTime = meetings[0].meetingTime;
                     updateMeetingTimeDisplay();
                     
                     // 관리자 화면에서 입력란도 업데이트
@@ -774,15 +796,14 @@
             loadMeetingTime();
         }
 
-        // 실시간 리스너 설정
+        // 실시간 리스너 설정 (orderBy 제거로 인덱스 문제 해결)
         function setupRealtimeListener() {
             if (!window.db) return;
 
             const today = new Date().toDateString();
             const q = window.firestore.query(
                 window.firestore.collection(window.db, 'attendance'),
-                window.firestore.where('date', '==', today),
-                window.firestore.orderBy('timestamp', 'desc')
+                window.firestore.where('date', '==', today)
             );
 
             unsubscribe = window.firestore.onSnapshot(q, (snapshot) => {
@@ -790,6 +811,9 @@
                 snapshot.forEach((doc) => {
                     records.push({ id: doc.id, ...doc.data() });
                 });
+                
+                // 클라이언트에서 정렬 (최신순)
+                records.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                 
                 // 통계 계산
                 const lateCount = records.filter(r => r.lateMinutes > 0).length;
@@ -968,12 +992,22 @@
                 document.getElementById('saved-user').classList.add('hidden');
                 document.getElementById('user-name').value = '';
                 
-                // 결과 메시지
+                // 결과 메시지와 통계 버튼
+                let resultMessage = '';
                 if (lateMinutes === 0) {
-                    showAlert(`${userName}님, 정시 출석 완료! 🎉\n잠시 후 자동으로 새로고침됩니다.`, 'success');
+                    resultMessage = `${userName}님, 정시 출석 완료! 🎉<br><br>`;
                 } else {
-                    showAlert(`${userName}님, ${lateMinutes}분 지각으로 ${fine.toLocaleString()}원 벌금입니다. 😅\n잠시 후 자동으로 새로고침됩니다.`, 'warning');
+                    resultMessage = `${userName}님, ${lateMinutes}분 지각으로 ${fine.toLocaleString()}원 벌금입니다. 😅<br><br>`;
                 }
+                
+                resultMessage += `
+                    <button class="btn" onclick="showStatsAfterAttendance()" style="margin: 10px 0;">
+                        📊 출석 현황 보기
+                    </button><br>
+                    <small style="color: #666;">3초 후 자동으로 새로고침됩니다</small>
+                `;
+                
+                showAlert(resultMessage, lateMinutes === 0 ? 'success' : 'warning');
                 
                 // 3초 후 자동으로 페이지 새로고침 (다음 사람을 위해)
                 setTimeout(() => {
@@ -1082,7 +1116,7 @@
             }
         }
 
-        // 알림 표시
+        // 알림 표시 (HTML 지원)
         function showAlert(message, type) {
             const resultDiv = document.getElementById('result-message');
             resultDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
