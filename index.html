@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>간단 출석 체크</title>
+    
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        
+        // Firebase 설정
+        const firebaseConfig = {
+            apiKey: "AIzaSyA0xP2CkLBXMLEpmeWcdpuqPFebI4aqCEc",
+            authDomain: "hosanna-chulcheck.firebaseapp.com",
+            projectId: "hosanna-chulcheck",
+            storageBucket: "hosanna-chulcheck.firebasestorage.app",
+            messagingSenderId: "895906682359",
+            appId: "1:895906682359:web:016536e1fe2fa92b1ecaf2"
+        };
+        
+        // Firebase 초기화
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // 전역 변수로 설정
+        window.db = db;
+        window.firestore = { collection, addDoc, onSnapshot, query, orderBy, where, getDocs };
+    </script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            padding: 30px;
+            text-align: center;
+            color: white;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .tab-buttons {
+            display: flex;
+            margin-bottom: 30px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 5px;
+        }
+        
+        .tab-btn {
+            flex: 1;
+            background: none;
+            border: none;
+            padding: 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .tab-btn.active {
+            background: #4facfe;
+            color: white;
+            box-shadow: 0 4px 12px rgba(79, 172, 254, 0.3);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 18px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #4facfe;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 20px 30px;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            width: 100%;
+            margin-bottom: 15px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn:disabled {
+            background: #ccc;
+            transform: none;
+            cursor: not-allowed;
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+            font-size: 22px;
+            padding: 25px;
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        }
+        
+        .qr-container {
+            text-align: center;
+            margin: 20px 0;
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+            border: 3px dashed #4facfe;
+        }
+        
+        #qr-code {
+            margin: 20px auto;
+            display: inline-block;
+            padding: 20px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .url-display {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            font-weight: 600;
+            text-align: center;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+        
+        .alert-danger {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+        
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 2px solid #ffeaa7;
+        }
+        
+        .attendance-list {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .attendance-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .name {
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+        
+        .time {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .stats-summary {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            margin: 20px 0;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .stats-number {
+            font-size: 2.5em;
+            font-weight: 700;
+            color: #4facfe;
+        }
+        
+        .stats-label {
+            color: #666;
+            font-size: 1.1em;
+            margin-top: 5px;
+        }
+        
+        .user-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            text-align: center;
+        }
+        
+        .connection-status {
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+            text-align: center;
+            font-weight: 600;
+        }
+        
+        .connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .attendance-main {
+            text-align: center;
+            padding: 20px 0;
+        }
+        
+        .big-title {
+            font-size: 2em;
+            margin-bottom: 30px;
+            color: #4facfe;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 출석 체크</h1>
+            <p>QR 스캔하면 바로 이 페이지로!</p>
+        </div>
+        
+        <div class="content">
+            <div id="connection-status" class="connection-status disconnected">
+                Firebase 연결 중...
+            </div>
+            
+            <!-- URL 파라미터로 출석 모드 확인 -->
+            <div id="attendance-mode" class="attendance-main hidden">
+                <div class="big-title">✅ 출석하기</div>
+                
+                <div class="form-group">
+                    <label for="user-name">이름</label>
+                    <input type="text" id="user-name" placeholder="이름을 입력하세요" autofocus>
+                </div>
+                
+                <div id="saved-user" class="user-info hidden">
+                    <p><strong id="saved-name"></strong>님으로 출석하시겠습니까?</p>
+                    <button class="btn btn-success" onclick="recordAttendance()" id="quick-attend-btn">✅ 출석하기</button>
+                    <button class="btn" onclick="changeUser()">다른 이름으로 출석</button>
+                </div>
+                
+                <button class="btn btn-success" onclick="recordAttendance()" id="attend-btn">✅ 출석하기</button>
+                
+                <div id="result-message"></div>
+            </div>
+            
+            <!-- 관리자 로그인 (QR 코드 생성용) -->
+            <div id="admin-login" class="attendance-main">
+                <div class="big-title">🔐 관리자 로그인</div>
+                <p style="color: #666; margin-bottom: 20px;">QR 코드 생성 및 데이터 관리는 관리자만 가능합니다</p>
+                
+                <div class="form-group">
+                    <label for="admin-password">관리자 비밀번호</label>
+                    <input type="password" id="admin-password" placeholder="비밀번호를 입력하세요" autofocus>
+                    <small style="color: #666;">현재 비밀번호: hosanna123</small>
+                </div>
+                
+                <button class="btn" onclick="checkAdminPassword()">로그인</button>
+                
+                <div id="login-message"></div>
+                
+                <div style="margin-top: 30px; text-align: center;">
+                    <button class="btn" onclick="goToStats()" style="background: #6c757d;">📊 통계만 보기</button>
+                </div>
+            </div>
+
+            <!-- 일반 사용자용 통계 -->
+            <div id="stats-only-mode" class="hidden">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <span style="color: #4facfe; font-weight: 600;">📊 출석 통계</span>
+                    <button style="margin-left: 10px; padding: 5px 10px; border: none; background: #4facfe; color: white; border-radius: 5px; cursor: pointer;" onclick="goToAdminLogin()">관리자 로그인</button>
+                </div>
+                
+                <div class="stats-summary">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px;">
+                        <div style="text-align: center;">
+                            <div class="stats-number" id="total-count-public">0</div>
+                            <div class="stats-label">총 출석자</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div class="stats-number" id="late-count-public" style="color: #ff6b6b;">0</div>
+                            <div class="stats-label">지각자</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div class="stats-number" id="total-fine-public" style="color: #ff9f43;">0원</div>
+                            <div class="stats-label">총 벌금</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="attendance-list">
+                    <h3 style="color: #4facfe; margin-bottom: 15px;">📊 출석 현황</h3>
+                    <div id="attendance-list-public" class="loading">출석 기록을 불러오는 중...</div>
+                </div>
+            </div>
+
+            <!-- 관리자 전용 모드 -->
+            <div id="admin-mode" class="hidden">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <span style="color: #4facfe; font-weight: 600;">🔐 관리자 모드</span>
+                    <button style="margin-left: 10px; padding: 5px 10px; border: none; background: #ff6b6b; color: white; border-radius: 5px; cursor: pointer;" onclick="logout()">로그아웃</button>
+                </div>
+                
+                <div class="tab-buttons">
+                    <button class="tab-btn active" onclick="showTab('qr')">QR 코드</button>
+                    <button class="tab-btn" onclick="showTab('stats')">통계</button>
+                </div>
+                
+                <!-- QR 코드 탭 -->
+                <div id="qr-tab" class="tab-content active">
+                    <!-- 모임 시간 설정 -->
+                    <div style="background: #fff3cd; padding: 20px; border-radius: 15px; margin-bottom: 20px;">
+                        <h3 style="color: #856404; margin-bottom: 15px;">⏰ 모임 시간 설정</h3>
+                        <div class="form-group">
+                            <label for="meeting-time">오늘 모임 시간</label>
+                            <input type="datetime-local" id="meeting-time" style="margin-bottom: 10px;">
+                            <button class="btn" onclick="setMeetingTime()" style="padding: 10px; font-size: 16px;">시간 설정</button>
+                        </div>
+                        <div id="current-meeting-time" style="margin-top: 10px; font-weight: 600;"></div>
+                    </div>
+                    
+                    <!-- 고정 QR 코드 -->
+                    <div class="qr-container">
+                        <h3 style="color: #4facfe; margin-bottom: 10px;">📍 고정 출석 QR 코드</h3>
+                        <p style="color: #666; margin-bottom: 20px; font-size: 14px;">
+                            ✅ <strong>이 QR 코드는 영구적으로 사용됩니다</strong><br>
+                            한 번 인쇄해서 문에 붙여두면 계속 사용 가능해요!
+                        </p>
+                        <div id="qr-code"></div>
+                        <p style="margin-top: 15px; color: #28a745; font-weight: 600;">
+                            📌 QR 스캔 → 자동으로 출석 페이지 이동
+                        </p>
+                    </div>
+                    
+                    <div class="url-display">
+                        <strong>고정 URL:</strong> <span id="attendance-url"></span>
+                    </div>
+                    
+                    <button class="btn" onclick="printQR()">🖨️ QR 코드 인쇄하기</button>
+                    <button class="btn" onclick="copyUrl()">📋 URL 복사하기</button>
+                    
+                    <!-- 안내 메시지 -->
+                    <div style="background: #e8f5e8; padding: 15px; border-radius: 10px; margin-top: 20px;">
+                        <h4 style="color: #28a745; margin-bottom: 10px;">💡 사용 팁</h4>
+                        <ul style="color: #155724; margin: 0; padding-left: 20px;">
+                            <li>QR 코드를 한 번만 인쇄해서 모임 장소에 붙여주세요</li>
+                            <li>매 모임마다 위의 "모임 시간"만 새로 설정하면 됩니다</li>
+                            <li>QR 코드는 절대 바뀌지 않으니 안심하세요!</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- 통계 탭 - 관리자용 (삭제 기능 포함) -->
+                <div id="stats-tab" class="tab-content">
+                    <div class="stats-summary">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px;">
+                            <div style="text-align: center;">
+                                <div class="stats-number" id="total-count">0</div>
+                                <div class="stats-label">총 출석자</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div class="stats-number" id="late-count" style="color: #ff6b6b;">0</div>
+                                <div class="stats-label">지각자</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div class="stats-number" id="total-fine" style="color: #ff9f43;">0원</div>
+                                <div class="stats-label">총 벌금</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="attendance-list">
+                        <h3 style="color: #4facfe; margin-bottom: 15px;">📊 상세 출석 기록</h3>
+                        <div id="attendance-list" class="loading">출석 기록을 불러오는 중...</div>
+                    </div>
+                    
+                    <button class="btn btn-danger" onclick="clearTodayData()">🗑️ 오늘 기록 삭제 (관리자 전용)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let savedUserName = localStorage.getItem('savedUserName') || '';
+        let unsubscribe = null;
+        let attendanceCount = 0;
+        let currentUrl = window.location.href.split('?')[0]; // 파라미터 제거한 기본 URL
+        let isAdminLoggedIn = sessionStorage.getItem('adminLoggedIn') === 'true';
+        let meetingTime = localStorage.getItem('meetingTime') || null;
+        
+        // 관리자 비밀번호 (원하는 비밀번호로 변경하세요!)
+        const ADMIN_PASSWORD = 'hosanna123';
+
+        // 앱 초기화
+        function initializeApp() {
+            checkUrlParams();
+            setupRealtimeListener();
+            loadMeetingTime();
+        }
+        
+        // 모임 시간 로드
+        function loadMeetingTime() {
+            if (meetingTime) {
+                document.getElementById('meeting-time').value = meetingTime;
+                updateMeetingTimeDisplay();
+            } else {
+                // 기본값: 현재 시간
+                const now = new Date();
+                now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                document.getElementById('meeting-time').value = now.toISOString().slice(0, 16);
+            }
+        }
+        
+        // 모임 시간 설정
+        function setMeetingTime() {
+            const timeInput = document.getElementById('meeting-time').value;
+            if (!timeInput) {
+                showLoginAlert('모임 시간을 선택해주세요.', 'danger');
+                return;
+            }
+            
+            meetingTime = timeInput;
+            localStorage.setItem('meetingTime', meetingTime);
+            updateMeetingTimeDisplay();
+            showLoginAlert('모임 시간이 설정되었습니다!', 'success');
+        }
+        
+        // 모임 시간 표시 업데이트
+        function updateMeetingTimeDisplay() {
+            if (meetingTime) {
+                const time = new Date(meetingTime);
+                document.getElementById('current-meeting-time').innerHTML = 
+                    `<span style="color: #28a745;">✅ 설정된 모임 시간: ${time.toLocaleString('ko-KR')}</span>`;
+            }
+        }
+        
+        // 지각 시간 계산 (분 단위)
+        function calculateLateMinutes(checkInTime) {
+            if (!meetingTime) return 0;
+            
+            const meeting = new Date(meetingTime);
+            const checkIn = new Date(checkInTime);
+            const diffMs = checkIn - meeting;
+            
+            if (diffMs <= 0) return 0; // 정시 또는 일찍 도착
+            
+            return Math.ceil(diffMs / (1000 * 60)); // 분 단위로 올림
+        }
+        
+        // 벌금 계산 (5분당 5,000원)
+        function calculateFine(lateMinutes) {
+            if (lateMinutes <= 0) return 0;
+            return Math.ceil(lateMinutes / 5) * 5000;
+        }
+
+        // URL 파라미터 확인
+        function checkUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const action = urlParams.get('action');
+            
+            if (action === 'attend') {
+                // 출석 모드
+                document.getElementById('attendance-mode').classList.remove('hidden');
+                document.getElementById('admin-login').classList.add('hidden');
+                document.getElementById('stats-only-mode').classList.add('hidden');
+                document.getElementById('admin-mode').classList.add('hidden');
+                
+                if (savedUserName) {
+                    document.getElementById('saved-name').textContent = savedUserName;
+                    document.getElementById('saved-user').classList.remove('hidden');
+                    document.getElementById('attend-btn').classList.add('hidden');
+                }
+            } else {
+                // 메인 모드 - 관리자 로그인 화면 표시
+                document.getElementById('attendance-mode').classList.add('hidden');
+                document.getElementById('admin-login').classList.remove('hidden');
+                document.getElementById('stats-only-mode').classList.add('hidden');
+                document.getElementById('admin-mode').classList.add('hidden');
+            }
+        }
+        
+        // 통계만 보기
+        function goToStats() {
+            document.getElementById('admin-login').classList.add('hidden');
+            document.getElementById('stats-only-mode').classList.remove('hidden');
+            document.getElementById('admin-mode').classList.add('hidden');
+        }
+        
+        // 관리자 로그인 화면으로
+        function goToAdminLogin() {
+            document.getElementById('admin-login').classList.remove('hidden');
+            document.getElementById('stats-only-mode').classList.add('hidden');
+            document.getElementById('admin-mode').classList.add('hidden');
+        }
+        
+        // 관리자 비밀번호 확인
+        function checkAdminPassword() {
+            const password = document.getElementById('admin-password').value;
+            const messageDiv = document.getElementById('login-message');
+            
+            if (password === ADMIN_PASSWORD) {
+                isAdminLoggedIn = true;
+                sessionStorage.setItem('adminLoggedIn', 'true');
+                
+                document.getElementById('admin-login').classList.add('hidden');
+                document.getElementById('stats-only-mode').classList.add('hidden');
+                document.getElementById('admin-mode').classList.remove('hidden');
+                
+                // QR 생성 및 모임 시간 로드
+                generateQR();
+                loadMeetingTime();
+                
+                showLoginAlert('관리자 로그인 성공!', 'success');
+            } else {
+                showLoginAlert('비밀번호가 틀렸습니다.', 'danger');
+                document.getElementById('admin-password').value = '';
+            }
+        }
+        
+        // 로그아웃
+        function logout() {
+            isAdminLoggedIn = false;
+            sessionStorage.removeItem('adminLoggedIn');
+            
+            document.getElementById('admin-mode').classList.add('hidden');
+            document.getElementById('admin-login').classList.remove('hidden');
+            document.getElementById('stats-only-mode').classList.add('hidden');
+            document.getElementById('admin-password').value = '';
+            
+            showLoginAlert('로그아웃되었습니다.', 'warning');
+        }
+        
+        // 로그인 알림 표시
+        function showLoginAlert(message, type) {
+            const messageDiv = document.getElementById('login-message');
+            messageDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            
+            setTimeout(() => {
+                messageDiv.innerHTML = '';
+            }, 3000);
+        }
+
+        // Firebase 연결 상태 확인
+        function checkFirebaseConnection() {
+            if (window.db) {
+                document.getElementById('connection-status').className = 'connection-status connected';
+                document.getElementById('connection-status').textContent = '🟢 실시간 공유 연결됨';
+                initializeApp();
+            } else {
+                document.getElementById('connection-status').className = 'connection-status disconnected';
+                document.getElementById('connection-status').textContent = '🔴 Firebase 연결 실패';
+                showAlert('Firebase 연결에 문제가 있습니다.', 'warning');
+            }
+        }
+
+        // 앱 초기화
+        function initializeApp() {
+            checkUrlParams();
+            setupRealtimeListener();
+            loadMeetingTime();
+        }
+
+        // 실시간 리스너 설정
+        function setupRealtimeListener() {
+            if (!window.db) return;
+
+            const today = new Date().toDateString();
+            const q = window.firestore.query(
+                window.firestore.collection(window.db, 'attendance'),
+                window.firestore.where('date', '==', today),
+                window.firestore.orderBy('timestamp', 'desc')
+            );
+
+            unsubscribe = window.firestore.onSnapshot(q, (snapshot) => {
+                const records = [];
+                snapshot.forEach((doc) => {
+                    records.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // 통계 계산
+                const lateCount = records.filter(r => r.lateMinutes > 0).length;
+                const totalFine = records.reduce((sum, r) => sum + (r.fine || 0), 0);
+                
+                // 관리자용 통계 업데이트
+                updateAttendanceDisplay(records);
+                document.getElementById('total-count').textContent = records.length;
+                document.getElementById('late-count').textContent = lateCount;
+                document.getElementById('total-fine').textContent = totalFine.toLocaleString() + '원';
+                
+                // 일반 사용자용 통계 업데이트
+                updatePublicAttendanceDisplay(records);
+                document.getElementById('total-count-public').textContent = records.length;
+                document.getElementById('late-count-public').textContent = lateCount;
+                document.getElementById('total-fine-public').textContent = totalFine.toLocaleString() + '원';
+                
+                attendanceCount = records.length;
+            });
+        }
+
+        // 탭 전환
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+        }
+
+        // QR 코드 생성 (가장 안정적인 방식)
+        function generateQR() {
+            const attendanceUrl = currentUrl + '?action=attend';
+            document.getElementById('attendance-url').textContent = attendanceUrl;
+            
+            // 온라인 QR 생성 API 사용 (100% 안정적)
+            const qrContainer = document.getElementById('qr-code');
+            qrContainer.innerHTML = `
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(attendanceUrl)}" 
+                     alt="출석 QR 코드" 
+                     style="border: 1px solid #ddd; border-radius: 10px; max-width: 100%;"
+                     onload="console.log('QR 코드 로드 완료')"
+                     onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhkN2RhIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNiIgZmlsbD0iIzcyMWMyNCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkVSUk9SPC90ZXh0Pjwvc3ZnPg=='">
+            `;
+        }
+
+        // URL 복사
+        function copyUrl() {
+            const url = document.getElementById('attendance-url').textContent;
+            navigator.clipboard.writeText(url).then(() => {
+                showAlert('URL이 복사되었습니다!', 'success');
+            });
+        }
+
+        // QR 코드 인쇄
+        function printQR() {
+            const qrElement = document.getElementById('qr-code');
+            const url = document.getElementById('attendance-url').textContent;
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>출석 QR 코드</title>
+                    <style>
+                        body { 
+                            font-family: Arial, sans-serif; 
+                            text-align: center; 
+                            padding: 50px;
+                        }
+                        .qr-container { 
+                            border: 3px solid #000; 
+                            padding: 30px; 
+                            display: inline-block;
+                        }
+                        h1 { font-size: 24px; margin-bottom: 20px; }
+                        p { font-size: 16px; margin: 10px 0; }
+                        .url { font-size: 12px; word-break: break-all; margin-top: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <h1>📋 출석 QR 코드</h1>
+                    <div class="qr-container">
+                        ${qrElement.innerHTML}
+                    </div>
+                    <p>QR 코드를 스캔하면 출석 페이지로 이동합니다</p>
+                    <div class="url">${url}</div>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
+        }
+
+        // 다른 이름으로 출석
+        function changeUser() {
+            document.getElementById('saved-user').classList.add('hidden');
+            document.getElementById('attend-btn').classList.remove('hidden');
+            document.getElementById('user-name').value = '';
+            document.getElementById('user-name').focus();
+        }
+
+        // 출석 기록
+        async function recordAttendance() {
+            if (!window.db) {
+                showAlert('Firebase 연결이 필요합니다.', 'danger');
+                return;
+            }
+
+            if (!meetingTime) {
+                showAlert('관리자가 모임 시간을 먼저 설정해야 합니다.', 'danger');
+                return;
+            }
+
+            let userName;
+            
+            if (savedUserName && !document.getElementById('saved-user').classList.contains('hidden')) {
+                userName = savedUserName;
+            } else {
+                userName = document.getElementById('user-name').value.trim();
+                if (!userName) {
+                    showAlert('이름을 입력해주세요.', 'danger');
+                    return;
+                }
+                // 새 이름 저장
+                savedUserName = userName;
+                localStorage.setItem('savedUserName', savedUserName);
+            }
+
+            // 버튼 비활성화
+            document.getElementById('attend-btn').disabled = true;
+            document.getElementById('quick-attend-btn').disabled = true;
+            
+            try {
+                // 오늘 이미 출석했는지 확인
+                const today = new Date().toDateString();
+                const q = window.firestore.query(
+                    window.firestore.collection(window.db, 'attendance'),
+                    window.firestore.where('name', '==', userName),
+                    window.firestore.where('date', '==', today)
+                );
+                
+                const querySnapshot = await window.firestore.getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    showAlert('오늘 이미 출석하셨습니다.', 'danger');
+                    document.getElementById('attend-btn').disabled = false;
+                    document.getElementById('quick-attend-btn').disabled = false;
+                    return;
+                }
+                
+                // 출석 시간 및 지각 계산
+                const now = new Date();
+                const lateMinutes = calculateLateMinutes(now.toISOString());
+                const fine = calculateFine(lateMinutes);
+                
+                // 출석 기록 저장
+                const record = {
+                    name: userName,
+                    timestamp: now.toISOString(),
+                    date: now.toDateString(),
+                    time: now.toLocaleTimeString('ko-KR'),
+                    lateMinutes: lateMinutes,
+                    fine: fine,
+                    meetingTime: meetingTime
+                };
+                
+                await window.firestore.addDoc(window.firestore.collection(window.db, 'attendance'), record);
+                
+                // 결과 메시지
+                if (lateMinutes === 0) {
+                    showAlert(`${userName}님, 정시 출석 완료! 🎉`, 'success');
+                } else {
+                    showAlert(`${userName}님, ${lateMinutes}분 지각으로 ${fine.toLocaleString()}원 벌금입니다. 😅`, 'warning');
+                }
+                
+                // 3초 후 자동으로 페이지 새로고침 (다음 사람을 위해)
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+                
+            } catch (error) {
+                console.error('출석 기록 실패:', error);
+                showAlert('출석 기록에 실패했습니다. 다시 시도해주세요.', 'danger');
+            }
+            
+            // 버튼 재활성화
+            document.getElementById('attend-btn').disabled = false;
+            document.getElementById('quick-attend-btn').disabled = false;
+        }
+
+        // 관리자용 출석 현황 업데이트
+        function updateAttendanceDisplay(records) {
+            const listElement = document.getElementById('attendance-list');
+            
+            if (records.length === 0) {
+                listElement.innerHTML = '<p style="text-align: center; color: #666;">오늘 출석 기록이 없습니다.</p>';
+                return;
+            }
+            
+            listElement.innerHTML = records.map((record, index) => {
+                const isLate = record.lateMinutes > 0;
+                const statusColor = isLate ? '#ff6b6b' : '#28a745';
+                const statusText = isLate ? `${record.lateMinutes}분 지각` : '정시';
+                const fineText = record.fine > 0 ? `${record.fine.toLocaleString()}원` : '-';
+                
+                return `
+                    <div class="attendance-item">
+                        <div>
+                            <div class="name">${index + 1}. ${record.name}</div>
+                            <div class="time">출석: ${record.time}</div>
+                            ${record.meetingTime ? `<div class="time" style="font-size: 0.8em; color: #999;">모임: ${new Date(record.meetingTime).toLocaleTimeString('ko-KR')}</div>` : ''}
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="color: ${statusColor}; font-weight: 600; margin-bottom: 5px;">
+                                ${statusText}
+                            </div>
+                            ${record.fine > 0 ? `<div style="color: #ff9f43; font-weight: 600;">벌금: ${fineText}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // 일반 사용자용 출석 현황 업데이트
+        function updatePublicAttendanceDisplay(records) {
+            const listElement = document.getElementById('attendance-list-public');
+            
+            if (records.length === 0) {
+                listElement.innerHTML = '<p style="text-align: center; color: #666;">오늘 출석 기록이 없습니다.</p>';
+                return;
+            }
+            
+            listElement.innerHTML = records.map((record, index) => {
+                const isLate = record.lateMinutes > 0;
+                const statusColor = isLate ? '#ff6b6b' : '#28a745';
+                const statusText = isLate ? `${record.lateMinutes}분 지각` : '정시';
+                const fineText = record.fine > 0 ? `${record.fine.toLocaleString()}원` : '';
+                
+                return `
+                    <div class="attendance-item">
+                        <div>
+                            <div class="name">${index + 1}. ${record.name}</div>
+                            <div class="time">${record.time}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="color: ${statusColor}; font-weight: 600;">
+                                ${statusText}
+                            </div>
+                            ${fineText ? `<div style="color: #ff9f43; font-size: 0.9em;">${fineText}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 오늘 데이터 삭제 (관리자 전용)
+        async function clearTodayData() {
+            if (!window.db) {
+                showAlert('Firebase 연결이 필요합니다.', 'danger');
+                return;
+            }
+
+            if (!confirm('⚠️ 정말로 오늘의 모든 출석 기록을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
+                return;
+            }
+
+            try {
+                const today = new Date().toDateString();
+                const q = window.firestore.query(
+                    window.firestore.collection(window.db, 'attendance'),
+                    window.firestore.where('date', '==', today)
+                );
+                
+                const querySnapshot = await window.firestore.getDocs(q);
+                showAlert(`${querySnapshot.size}개의 기록이 확인되었습니다. 실제 삭제는 Firebase 콘솔에서 수동으로 해야 합니다.`, 'warning');
+                
+            } catch (error) {
+                console.error('데이터 확인 실패:', error);
+                showAlert('데이터 확인에 실패했습니다.', 'danger');
+            }
+        }
+
+        // 알림 표시
+        function showAlert(message, type) {
+            const resultDiv = document.getElementById('result-message');
+            resultDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            
+            setTimeout(() => {
+                resultDiv.innerHTML = '';
+            }, 5000);
+        }
+
+        // Enter 키로 출석하기 및 관리자 로그인
+        document.addEventListener('DOMContentLoaded', function() {
+            const nameInput = document.getElementById('user-name');
+            const passwordInput = document.getElementById('admin-password');
+            
+            if (nameInput) {
+                nameInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        recordAttendance();
+                    }
+                });
+            }
+            
+            if (passwordInput) {
+                passwordInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        checkAdminPassword();
+                    }
+                });
+            }
+        });
+
+        // 초기화
+        window.addEventListener('load', () => {
+            setTimeout(checkFirebaseConnection, 1000);
+        });
+        
+        window.addEventListener('beforeunload', () => {
+            if (unsubscribe) unsubscribe();
+        });
+    </script>
+</body>
+</html>
