@@ -431,7 +431,8 @@
                 
                 <div class="tab-buttons">
                     <button class="tab-btn active" onclick="showTab('qr')">QR 코드</button>
-                    <button class="tab-btn" onclick="showTab('stats')">통계</button>
+                    <button class="tab-btn" onclick="showTab('stats')">오늘 통계</button>
+                    <button class="tab-btn" onclick="showTab('history')">이전 통계</button>
                 </div>
                 
                 <!-- QR 코드 탭 -->
@@ -445,6 +446,35 @@
                             <button class="btn" onclick="setMeetingTime()" style="padding: 10px; font-size: 16px;">시간 설정</button>
                         </div>
                         <div id="current-meeting-time" style="margin-top: 10px; font-weight: 600;"></div>
+                    </div>
+                    
+                    <!-- 지각비 설정 -->
+                    <div style="background: #ffeaa7; padding: 20px; border-radius: 15px; margin-bottom: 20px;">
+                        <h3 style="color: #d63031; margin-bottom: 15px;">💰 지각비 설정</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="fine-min-unit">최소 단위 (분)</label>
+                                <input type="number" id="fine-min-unit" value="1" min="1" style="padding: 10px; font-size: 16px;">
+                                <small style="color: #666; font-size: 12px;">지각시간을 몇 분 단위로 계산할지 설정</small>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="fine-per-minute">분당 벌금 (원)</label>
+                                <input type="number" id="fine-per-minute" value="1000" min="0" step="100" style="padding: 10px; font-size: 16px;">
+                                <small style="color: #666; font-size: 12px;">위 단위당 벌금 금액</small>
+                            </div>
+                        </div>
+                        <button class="btn" onclick="saveFineSettings()" style="padding: 10px; font-size: 16px; background: linear-gradient(135deg, #e17055 0%, #d63031 100%);">💰 지각비 설정</button>
+                        <div id="current-fine-settings" style="margin-top: 10px; font-weight: 600;"></div>
+                        
+                        <!-- 예시 설명 -->
+                        <div style="background: rgba(255,255,255,0.3); padding: 15px; border-radius: 10px; margin-top: 15px;">
+                            <h4 style="color: #2d3436; margin-bottom: 10px;">💡 설정 예시</h4>
+                            <ul style="color: #2d3436; margin: 0; padding-left: 20px; font-size: 14px;">
+                                <li><strong>1분당 1,000원:</strong> 3분 지각 → 3,000원</li>
+                                <li><strong>5분당 2,000원:</strong> 7분 지각 → 4,000원 (5분 × 2회 = 10분 기준)</li>
+                                <li><strong>10분당 5,000원:</strong> 23분 지각 → 15,000원 (10분 × 3회 = 30분 기준)</li>
+                            </ul>
+                        </div>
                     </div>
                     
                     <!-- 고정 QR 코드 -->
@@ -508,6 +538,89 @@
                     
                     <button class="btn btn-danger" onclick="clearTodayData()">🗑️ 오늘 기록 삭제 (관리자 전용)</button>
                 </div>
+                
+                <!-- 이전 통계 탭 - 관리자 전용 -->
+                <div id="history-tab" class="tab-content">
+                    <div style="background: #e3f2fd; padding: 10px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+                        <small style="color: #1976d2;">📊 과거 출석 기록을 날짜별/월별로 조회할 수 있습니다</small>
+                    </div>
+                    
+                    <!-- 조회 옵션 선택 -->
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 15px; margin-bottom: 20px;">
+                        <h3 style="color: #4facfe; margin-bottom: 15px;">🔍 조회 옵션</h3>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                            <button class="btn" id="date-mode-btn" onclick="setHistoryMode('date')" 
+                                    style="background: #4facfe; padding: 10px; font-size: 14px;">📅 날짜별 조회</button>
+                            <button class="btn" id="month-mode-btn" onclick="setHistoryMode('month')" 
+                                    style="background: #6c757d; padding: 10px; font-size: 14px;">📆 월별 조회</button>
+                        </div>
+                        
+                        <!-- 날짜별 조회 -->
+                        <div id="date-search" class="form-group">
+                            <label for="search-date">조회할 날짜</label>
+                            <input type="date" id="search-date" style="margin-bottom: 10px;">
+                            <button class="btn" onclick="searchByDate()" style="padding: 10px; font-size: 16px;">🔍 해당 날짜 조회</button>
+                        </div>
+                        
+                        <!-- 월별 조회 -->
+                        <div id="month-search" class="form-group hidden">
+                            <label for="search-month">조회할 년/월</label>
+                            <input type="month" id="search-month" style="margin-bottom: 10px;">
+                            <button class="btn" onclick="searchByMonth()" style="padding: 10px; font-size: 16px;">📊 해당 월 통계</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 검색 결과 영역 -->
+                    <div id="history-results" class="hidden">
+                        <!-- 요약 통계 -->
+                        <div class="stats-summary">
+                            <h3 style="color: #4facfe; margin-bottom: 15px;">📊 <span id="history-period"></span> 통계</h3>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px;">
+                                <div style="text-align: center;">
+                                    <div class="stats-number" id="history-total-count">0</div>
+                                    <div class="stats-label">총 출석자</div>
+                                </div>
+                                <div style="text-align: center;">
+                                    <div class="stats-number" id="history-late-count" style="color: #ff6b6b;">0</div>
+                                    <div class="stats-label">지각자</div>
+                                </div>
+                                <div style="text-align: center;">
+                                    <div class="stats-number" id="history-total-fine" style="color: #ff9f43;">0원</div>
+                                    <div class="stats-label">총 벌금</div>
+                                </div>
+                                <div style="text-align: center;" id="history-unique-section">
+                                    <div class="stats-number" id="history-unique-count" style="color: #6f42c1;">0</div>
+                                    <div class="stats-label">고유 인원</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 상세 기록 -->
+                        <div class="attendance-list">
+                            <h3 style="color: #4facfe; margin-bottom: 15px;">📋 상세 기록</h3>
+                            <div id="history-list" class="loading">검색 결과를 불러오는 중...</div>
+                        </div>
+                        
+                        <!-- 월별 조회 시 추가 정보 -->
+                        <div id="monthly-details" class="hidden">
+                            <div style="background: #f8f9fa; padding: 20px; border-radius: 15px; margin-top: 20px;">
+                                <h4 style="color: #4facfe; margin-bottom: 15px;">📈 월별 상세 분석</h4>
+                                <div id="monthly-breakdown"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 초기 안내 메시지 -->
+                    <div id="history-placeholder" style="text-align: center; color: #666; padding: 40px;">
+                        <h4>📊 이전 통계</h4>
+                        <p>위에서 날짜나 월을 선택하여 과거 출석 기록을 조회하세요.</p>
+                        <ul style="list-style: none; margin-top: 20px; color: #999;">
+                            <li>📅 날짜별 조회: 특정 날짜의 출석 현황</li>
+                            <li>📆 월별 조회: 한 달간의 통계 및 분석</li>
+                        </ul>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -516,11 +629,18 @@
         let savedUserName = localStorage.getItem('savedUserName') || '';
         let unsubscribe = null;
         let unsubscribeMeeting = null;
+        let unsubscribeFineSettings = null; // 지각비 설정 리스너 추가
         let attendanceCount = 0;
         let currentUrl = window.location.href.split('?')[0]; // 파라미터 제거한 기본 URL
         let isAdminLoggedIn = sessionStorage.getItem('adminLoggedIn') === 'true';
         let meetingTime = null;
         let autoRefreshTimer = null; // 자동 새로고침 타이머
+        
+        // 지각비 설정 (기본값: 1분당 1000원)
+        let fineSettings = {
+            perMinute: 1000,  // 1분당 벌금
+            minUnit: 1        // 최소 단위 (분)
+        };
         
         // 관리자 비밀번호 (원하는 비밀번호로 변경하세요!)
         const ADMIN_PASSWORD = 'hosanna123';
@@ -530,7 +650,9 @@
             checkUrlParams();
             setupRealtimeListener();
             setupMeetingTimeListener();
+            setupFineSettingsListener(); // 지각비 설정 리스너 추가
             loadMeetingTimeFromFirebase();
+            loadFineSettingsFromFirebase(); // 지각비 설정 로드 추가
         }
         
         // 출석 페이지로 돌아가기
@@ -750,10 +872,13 @@
             return Math.ceil(diffMs / (1000 * 60)); // 분 단위로 올림
         }
 
-        // 벌금 계산 (5분당 5,000원)
+        // 벌금 계산 (설정에 따라)
         function calculateFine(lateMinutes) {
             if (lateMinutes <= 0) return 0;
-            return Math.ceil(lateMinutes / 5) * 5000;
+            
+            // 설정된 최소 단위로 올림 계산
+            const units = Math.ceil(lateMinutes / fineSettings.minUnit);
+            return units * fineSettings.perMinute;
         }
         
         // URL 파라미터 확인
@@ -1269,6 +1394,7 @@
         window.addEventListener('beforeunload', () => {
             if (unsubscribe) unsubscribe();
             if (unsubscribeMeeting) unsubscribeMeeting();
+            if (unsubscribeFineSettings) unsubscribeFineSettings(); // 지각비 설정 리스너도 정리
         });
     </script>
 </body>
