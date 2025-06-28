@@ -655,6 +655,412 @@
             loadFineSettingsFromFirebase(); // 지각비 설정 로드 추가
         }
         
+        // ========== 지각비 설정 관련 새로운 함수들 ==========
+
+        // Firebase에서 지각비 설정 불러오기
+        async function loadFineSettingsFromFirebase() {
+            if (!window.db) return;
+            
+            try {
+                const q = window.firestore.query(
+                    window.firestore.collection(window.db, 'settings'),
+                    window.firestore.where('type', '==', 'fine')
+                );
+                
+                const querySnapshot = await window.firestore.getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    // 가장 최근 설정 찾기
+                    const settings = [];
+                    querySnapshot.forEach(doc => {
+                        settings.push(doc.data());
+                    });
+                    
+                    settings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    const latestSetting = settings[0];
+                    
+                    fineSettings = {
+                        perMinute: latestSetting.perMinute || 1000,
+                        minUnit: latestSetting.minUnit || 1
+                    };
+                    
+                    updateFineSettingsDisplay();
+                }
+            } catch (error) {
+                console.error('지각비 설정 불러오기 실패:', error);
+            }
+        }
+
+        // 지각비 설정 실시간 리스너
+        function setupFineSettingsListener() {
+            if (!window.db) return;
+
+            const q = window.firestore.query(
+                window.firestore.collection(window.db, 'settings'),
+                window.firestore.where('type', '==', 'fine')
+            );
+
+            unsubscribeFineSettings = window.firestore.onSnapshot(q, (snapshot) => {
+                if (!snapshot.empty) {
+                    const settings = [];
+                    snapshot.forEach(doc => {
+                        settings.push(doc.data());
+                    });
+                    
+                    settings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    const latestSetting = settings[0];
+                    
+                    fineSettings = {
+                        perMinute: latestSetting.perMinute || 1000,
+                        minUnit: latestSetting.minUnit || 1
+                    };
+                    
+                    updateFineSettingsDisplay();
+                }
+            });
+        }
+
+        // 지각비 설정 화면 업데이트
+        function updateFineSettingsDisplay() {
+            const displayElement = document.getElementById('current-fine-settings');
+            if (displayElement) {
+                displayElement.innerHTML = 
+                    `<span style="color: #28a745;">✅ 현재 지각비: ${fineSettings.minUnit}분당 ${fineSettings.perMinute.toLocaleString()}원</span>`;
+            }
+            
+            // 입력 필드도 업데이트
+            const perMinuteInput = document.getElementById('fine-per-minute');
+            const minUnitInput = document.getElementById('fine-min-unit');
+            
+            if (perMinuteInput) perMinuteInput.value = fineSettings.perMinute;
+            if (minUnitInput) minUnitInput.value = fineSettings.minUnit;
+        }
+
+        // 지각비 설정 저장 (Firebase에 저장)
+        async function saveFineSettings() {
+            const perMinute = parseInt(document.getElementById('fine-per-minute').value);
+            const minUnit = parseInt(document.getElementById('fine-min-unit').value);
+            
+            if (!perMinute || perMinute < 0) {
+                showLoginAlert('올바른 벌금 금액을 입력해주세요.', 'danger');
+                return;
+            }
+            
+            if (!minUnit || minUnit < 1) {
+                showLoginAlert('최소 단위는 1분 이상이어야 합니다.', 'danger');
+                return;
+            }
+            
+            if (!window.db) {
+                showLoginAlert('Firebase 연결이 필요합니다.', 'danger');
+                return;
+            }
+            
+            try {
+                const settingData = {
+                    type: 'fine',
+                    perMinute: perMinute,
+                    minUnit: minUnit,
+                    timestamp: new Date().toISOString()
+                };
+                
+                await window.firestore.addDoc(window.firestore.collection(window.db, 'settings'), settingData);
+                
+                fineSettings = {
+                    perMinute: perMinute,
+                    minUnit: minUnit
+                };
+                
+                updateFineSettingsDisplay();
+                showLoginAlert(`지각비가 설정되었습니다! ${minUnit}분당 ${perMinute.toLocaleString()}원`, 'success');
+                
+            } catch (error) {
+                console.error('지각비 설정 저장 실패:', error);
+                showLoginAlert('지각비 설정 저장에 실패했습니다.', 'danger');
+            }
+        }
+        
+        // ========== 이전 통계 관련 새로운 함수들 ==========
+
+        // 이전 통계 모드 설정 (날짜별/월별)
+        function setHistoryMode(mode) {
+            const dateModeBtn = document.getElementById('date-mode-btn');
+            const monthModeBtn = document.getElementById('month-mode-btn');
+            const dateSearch = document.getElementById('date-search');
+            const monthSearch = document.getElementById('month-search');
+            
+            if (mode === 'date') {
+                dateModeBtn.style.background = '#4facfe';
+                monthModeBtn.style.background = '#6c757d';
+                dateSearch.classList.remove('hidden');
+                monthSearch.classList.add('hidden');
+                
+                // 기본값으로 오늘 날짜 설정
+                const today = new Date();
+                document.getElementById('search-date').value = today.toISOString().split('T')[0];
+            } else {
+                dateModeBtn.style.background = '#6c757d';
+                monthModeBtn.style.background = '#4facfe';
+                dateSearch.classList.add('hidden');
+                monthSearch.classList.remove('hidden');
+                
+                // 기본값으로 이번 달 설정
+                const today = new Date();
+                const yearMonth = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
+                document.getElementById('search-month').value = yearMonth;
+            }
+            
+            // 결과 초기화
+            document.getElementById('history-results').classList.add('hidden');
+            document.getElementById('history-placeholder').style.display = 'block';
+        }
+
+        // 날짜별 검색
+        async function searchByDate() {
+            const searchDate = document.getElementById('search-date').value;
+            if (!searchDate) {
+                showLoginAlert('조회할 날짜를 선택해주세요.', 'danger');
+                return;
+            }
+            
+            if (!window.db) {
+                showLoginAlert('Firebase 연결이 필요합니다.', 'danger');
+                return;
+            }
+            
+            try {
+                const targetDate = new Date(searchDate).toDateString();
+                const q = window.firestore.query(
+                    window.firestore.collection(window.db, 'attendance'),
+                    window.firestore.where('date', '==', targetDate)
+                );
+                
+                const querySnapshot = await window.firestore.getDocs(q);
+                const records = [];
+                
+                querySnapshot.forEach((doc) => {
+                    records.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // 시간순 정렬
+                records.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                
+                // 결과 표시
+                displayHistoryResults(records, searchDate, 'date');
+                
+            } catch (error) {
+                console.error('날짜별 검색 실패:', error);
+                showLoginAlert('검색에 실패했습니다.', 'danger');
+            }
+        }
+
+        // 월별 검색
+        async function searchByMonth() {
+            const searchMonth = document.getElementById('search-month').value;
+            if (!searchMonth) {
+                showLoginAlert('조회할 년/월을 선택해주세요.', 'danger');
+                return;
+            }
+            
+            if (!window.db) {
+                showLoginAlert('Firebase 연결이 필요합니다.', 'danger');
+                return;
+            }
+            
+            try {
+                // 해당 월의 첫 날과 마지막 날 계산
+                const [year, month] = searchMonth.split('-');
+                const startDate = new Date(year, month - 1, 1);
+                const endDate = new Date(year, month, 0, 23, 59, 59);
+                
+                // Firestore에서는 날짜 범위 쿼리가 제한적이므로 전체 데이터를 가져와서 필터링
+                const q = window.firestore.collection(window.db, 'attendance');
+                const querySnapshot = await window.firestore.getDocs(q);
+                
+                const records = [];
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const recordDate = new Date(data.timestamp);
+                    
+                    // 해당 월에 속하는 기록만 필터링
+                    if (recordDate >= startDate && recordDate <= endDate) {
+                        records.push({ id: doc.id, ...data });
+                    }
+                });
+                
+                // 시간순 정렬
+                records.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                
+                // 결과 표시
+                displayHistoryResults(records, `${year}년 ${month}월`, 'month');
+                
+                // 월별 상세 분석 표시
+                displayMonthlyAnalysis(records, year, month);
+                
+            } catch (error) {
+                console.error('월별 검색 실패:', error);
+                showLoginAlert('검색에 실패했습니다.', 'danger');
+            }
+        }
+
+        // 검색 결과 표시
+        function displayHistoryResults(records, period, mode) {
+            // 결과 영역 표시
+            document.getElementById('history-results').classList.remove('hidden');
+            document.getElementById('history-placeholder').style.display = 'none';
+            
+            // 기간 표시
+            document.getElementById('history-period').textContent = period;
+            
+            // 통계 계산
+            const totalCount = records.length;
+            const lateCount = records.filter(r => r.lateMinutes > 0).length;
+            const totalFine = records.reduce((sum, r) => sum + (r.fine || 0), 0);
+            
+            // 고유 인원 계산 (월별 조회 시에만)
+            let uniqueCount = 0;
+            if (mode === 'month') {
+                const uniqueNames = new Set(records.map(r => r.name));
+                uniqueCount = uniqueNames.size;
+                document.getElementById('history-unique-section').style.display = 'block';
+            } else {
+                document.getElementById('history-unique-section').style.display = 'none';
+            }
+            
+            // 통계 표시
+            document.getElementById('history-total-count').textContent = totalCount;
+            document.getElementById('history-late-count').textContent = lateCount;
+            document.getElementById('history-total-fine').textContent = totalFine.toLocaleString() + '원';
+            document.getElementById('history-unique-count').textContent = uniqueCount;
+            
+            // 상세 기록 표시
+            displayHistoryList(records, mode);
+        }
+
+        // 이전 통계 목록 표시
+        function displayHistoryList(records, mode) {
+            const listElement = document.getElementById('history-list');
+            
+            if (records.length === 0) {
+                listElement.innerHTML = '<p style="text-align: center; color: #666;">해당 기간의 출석 기록이 없습니다.</p>';
+                return;
+            }
+            
+            listElement.innerHTML = records.map((record, index) => {
+                const isLate = record.lateMinutes > 0;
+                const statusColor = isLate ? '#ff6b6b' : '#28a745';
+                const statusText = isLate ? `${record.lateMinutes}분 지각` : '정시';
+                const fineText = record.fine > 0 ? `${record.fine.toLocaleString()}원` : '-';
+                const recordDate = new Date(record.timestamp);
+                
+                return `
+                    <div class="attendance-item">
+                        <div>
+                            <div class="name">${index + 1}. ${record.name}</div>
+                            <div class="time">${recordDate.toLocaleDateString('ko-KR')} ${record.time}</div>
+                            ${record.meetingTime ? `<div class="time" style="font-size: 0.8em; color: #999;">모임: ${new Date(record.meetingTime).toLocaleTimeString('ko-KR')}</div>` : ''}
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="color: ${statusColor}; font-weight: 600;">
+                                ${statusText}
+                            </div>
+                            ${record.fine > 0 ? `<div style="color: #ff9f43; font-weight: 600;">벌금: ${fineText}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 월별 상세 분석 표시
+        function displayMonthlyAnalysis(records, year, month) {
+            const monthlyDetails = document.getElementById('monthly-details');
+            const monthlyBreakdown = document.getElementById('monthly-breakdown');
+            
+            if (records.length === 0) {
+                monthlyDetails.classList.add('hidden');
+                return;
+            }
+            
+            // 날짜별 그룹화
+            const dailyStats = {};
+            const nameStats = {};
+            
+            records.forEach(record => {
+                const date = new Date(record.timestamp).toLocaleDateString('ko-KR');
+                const name = record.name;
+                
+                // 날짜별 통계
+                if (!dailyStats[date]) {
+                    dailyStats[date] = { total: 0, late: 0, fine: 0 };
+                }
+                dailyStats[date].total++;
+                if (record.lateMinutes > 0) {
+                    dailyStats[date].late++;
+                    dailyStats[date].fine += record.fine || 0;
+                }
+                
+                // 개인별 통계
+                if (!nameStats[name]) {
+                    nameStats[name] = { total: 0, late: 0, fine: 0 };
+                }
+                nameStats[name].total++;
+                if (record.lateMinutes > 0) {
+                    nameStats[name].late++;
+                    nameStats[name].fine += record.fine || 0;
+                }
+            });
+            
+            // 개인별 통계 정렬 (출석 횟수 기준)
+            const sortedNameStats = Object.entries(nameStats)
+                .sort(([,a], [,b]) => b.total - a.total);
+            
+            let analysisHTML = `
+                <div style="margin-bottom: 20px;">
+                    <h5 style="color: #4facfe; margin-bottom: 10px;">👥 개인별 통계 (출석 횟수 순)</h5>
+                    <div style="max-height: 300px; overflow-y: auto;">
+            `;
+            
+            sortedNameStats.forEach(([name, stats], index) => {
+                const lateRate = stats.total > 0 ? ((stats.late / stats.total) * 100).toFixed(1) : 0;
+                analysisHTML += `
+                    <div style="display: flex; justify-content: space-between; padding: 8px; background: ${index % 2 === 0 ? '#f8f9fa' : 'white'}; margin-bottom: 2px; border-radius: 5px;">
+                        <span style="font-weight: 600;">${name}</span>
+                        <span style="color: #666; font-size: 0.9em;">
+                            ${stats.total}회 출석 | ${stats.late}회 지각 (${lateRate}%) | ${stats.fine.toLocaleString()}원
+                        </span>
+                    </div>
+                `;
+            });
+            
+            analysisHTML += `
+                    </div>
+                </div>
+                
+                <div>
+                    <h5 style="color: #4facfe; margin-bottom: 10px;">📅 날짜별 요약</h5>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+            `;
+            
+            Object.entries(dailyStats)
+                .sort(([a], [b]) => new Date(a) - new Date(b))
+                .forEach(([date, stats]) => {
+                    analysisHTML += `
+                        <div style="background: white; padding: 10px; border-radius: 8px; border: 1px solid #e9ecef;">
+                            <div style="font-weight: 600; margin-bottom: 5px;">${date}</div>
+                            <div style="font-size: 0.9em; color: #666;">
+                                출석: ${stats.total}명 | 지각: ${stats.late}명<br>
+                                벌금: ${stats.fine.toLocaleString()}원
+                            </div>
+                        </div>
+                    `;
+                });
+            
+            analysisHTML += '</div></div>';
+            
+            monthlyBreakdown.innerHTML = analysisHTML;
+            monthlyDetails.classList.remove('hidden');
+        }
+        
         // 출석 페이지로 돌아가기
         function goBackToAttendance() {
             // 페이지 제목 원래대로 복원
@@ -872,7 +1278,7 @@
             return Math.ceil(diffMs / (1000 * 60)); // 분 단위로 올림
         }
 
-        // 벌금 계산 (설정에 따라)
+        // 벌금 계산 (수정된 함수)
         function calculateFine(lateMinutes) {
             if (lateMinutes <= 0) return 0;
             
@@ -1147,13 +1553,19 @@
             document.getElementById('user-name').focus();
         }
         
-        // 탭 전환
+        // 탭 전환 (수정된 함수)
         function showTab(tabName) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
             
+            // 클릭된 탭 버튼 활성화
             event.target.classList.add('active');
             document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // 이전 통계 탭일 때 초기화
+            if (tabName === 'history') {
+                setHistoryMode('date'); // 기본값으로 날짜별 조회 설정
+            }
         }
         
         // 오늘 데이터 삭제 (관리자 전용)
